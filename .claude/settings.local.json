@@ -1,0 +1,26 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python:*)",
+      "Skill(frontend-development)",
+      "Skill(backend-development)",
+      "Skill(better-auth)",
+      "Skill(databases)",
+      "Skill(aesthetic)",
+      "Skill(ai-multimodal)",
+      "SlashCommand(/scout:ext \"Analyze current Next.js project structure, existing components, API routes, and any implemented features\")",
+      "SlashCommand(/scout:ext:*)",
+      "Bash(where gemini)",
+      "Bash(where:*)",
+      "Bash(ls:*)",
+      "Bash(findstr:*)",
+      "Skill(research)",
+      "Bash(Get-Date -UFormat \"%y%m%d-%H%M\")",
+      "Bash(mkdir:*)",
+      "Bash(Get-Date -UFormat \"%y%m%d\")",
+      "Skill(chrome-devtools)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
