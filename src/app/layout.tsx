@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Inter, Merriweather, Crimson_Pro } from "next/font/google";
 import "./globals.css";
+import Providers from "@/components/Providers";
 
 const inter = Inter({
   subsets: ["latin", "vietnamese"],
@@ -35,7 +36,7 @@ export default function RootLayout({
   return (
     <html lang="vi" className={`${inter.variable} ${merriweather.variable} ${crimsonPro.variable}`}>
       <body className={`${inter.className} antialiased`}>
-        {children}
+        <Providers>{children}</Providers>
       </body>
     </html>
   );

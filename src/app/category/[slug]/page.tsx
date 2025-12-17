@@ -1,9 +1,11 @@
 'use client';
 
-import { useState, useEffect, use } from 'react';
+import { useState, useEffect, use, Suspense } from 'react';
+import { useSearchParams } from 'next/navigation';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
-import { Article, categories } from '@/types/news';
+import { postsAPI, normalizeArticles, type NormalizedArticle } from '@/lib/api-endpoints';
+import { useCategories } from '@/stores/category-store';
 import Image from 'next/image';
 import Link from 'next/link';
 
@@ -19,86 +21,104 @@ const categorySubMenus: Record<string, string[]> = {
   'doi-song': ['Tổ ấm', 'Tiêu dùng', 'Bài học sống', 'Cooking'],
   'goc-nhin': ['Thời sự', 'Đời sống', 'Kinh doanh'],
   'bat-dong-san': ['Chính sách', 'Thị trường', 'Dự án', 'Không gian sống'],
+  'du-lich': ['Điểm đến', 'Ẩm thực', 'Dấu chân', 'Tư vấn'],
+  'so-hoa': ['Công nghệ', 'Sản phẩm', 'Kinh nghiệm', 'Esports'],
+  'oto-xe-may': ['Thị trường', 'Xe điện', 'Đánh giá', 'Tư vấn'],
+  'giao-duc': ['Tin tức', 'Tuyển sinh', 'Du học', 'Chân dung'],
+  'khoa-hoc': ['Tin tức', 'Phát minh', 'Ứng dụng', 'Thế giới tự nhiên'],
 };
 
-// Helper function để tính thời gian
-const getTimeAgo = (publishedAt: string) => {
-  const now = new Date();
-  const timestamp = parseInt(publishedAt) * 1000;
-  const published = new Date(timestamp);
-  const diffInHours = Math.floor((now.getTime() - published.getTime()) / (1000 * 60 * 60));
+const toSlug = (text: string) => {
+  return text
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/g, 'd')
+    .replace(/[^a-z0-9\s-]/g, '')
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-')
+    .trim();
+};
 
-  if (diffInHours < 1) return 'Vừa xong';
-  if (diffInHours < 24) return `${diffInHours} giờ trước`;
-  const diffInDays = Math.floor(diffInHours / 24);
-  if (diffInDays < 7) return `${diffInDays} ngày trước`;
-  return published.toLocaleDateString('vi-VN');
+// article.url đã là /${slug} từ normalizeArticle
+
+const getTimeAgo = (publishedAt: string) => {
+  if (publishedAt.includes('trước') || publishedAt.includes('phút') || publishedAt.includes('giờ')) {
+    return publishedAt;
+  }
+  const date = new Date(publishedAt);
+  if (!isNaN(date.getTime())) {
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffMins = Math.floor(diffMs / (1000 * 60));
+    const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+    if (diffMins < 60) return `${diffMins} phút trước`;
+    if (diffHours < 24) return `${diffHours} giờ trước`;
+    const diffDays = Math.floor(diffHours / 24);
+    if (diffDays < 7) return `${diffDays} ngày trước`;
+    return date.toLocaleDateString('vi-VN');
+  }
+  return publishedAt || 'Vừa xong';
 };
 
 interface Props {
   params: Promise<{ slug: string }>;
 }
 
-export default function CategoryPage({ params }: Props) {
-  const { slug } = use(params);
-  const [articles, setArticles] = useState<Article[]>([]);
+function CategoryContent({ slug }: { slug: string }) {
+  const searchParams = useSearchParams();
+  const activeSub = searchParams.get('sub');
+  const { categories, getCategoryBySlug } = useCategories();
+  const [articles, setArticles] = useState<NormalizedArticle[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState(0);
 
-  const category = categories.find((c) => c.slug === slug);
+  const category = getCategoryBySlug(slug);
   const subMenus = categorySubMenus[slug] || [];
 
   useEffect(() => {
-    async function fetchNews() {
+    async function fetchData() {
       try {
-        const res = await fetch(`/api/news?category=${slug}`);
-        const data = await res.json();
-
-        if (data.success) {
-          setArticles(data.articles);
-        }
+        const { data } = await postsAPI.getByCategory(slug, { limit: 20 });
+        setArticles(normalizeArticles(data));
       } catch (error) {
         console.error('Failed to fetch news:', error);
       } finally {
         setLoading(false);
       }
     }
-
-    fetchNews();
+    fetchData();
   }, [slug]);
 
   const featuredArticle = articles[0];
-  const secondaryArticles = articles.slice(1, 4);
-  const gridArticles = articles.slice(4, 8);
-  const listArticles = articles.slice(8);
+  const sideArticles = articles.slice(1, 4);
+  const listArticles = articles.slice(4);
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-white">
       <Header />
 
-      <main className="container mx-auto px-4 py-6 max-w-[1200px]">
-        {/* Category Header với Sub-menus */}
-        <div className="bg-white mb-6">
-          <div className="flex items-center gap-4 px-4 py-3 border-b-2 border-[#b80000]">
-            <h1 className="text-xl font-bold text-[#b80000]">
+      <main className="mx-auto px-4 py-5 max-w-[1130px]">
+        {/* Category Title + Sub-menu */}
+        <div className="border-b border-[#c41e3a] pb-2 mb-5">
+          <div className="flex items-center flex-wrap gap-x-4 gap-y-2">
+            <Link href={`/category/${slug}`} className="text-2xl font-normal text-[#222]">
               {category?.name || slug}
-            </h1>
+            </Link>
             {subMenus.length > 0 && (
-              <nav className="flex items-center gap-1 overflow-x-auto scrollbar-hide">
-                {subMenus.map((sub, idx) => (
-                  <button
-                    key={sub}
-                    type="button"
-                    onClick={() => setActiveTab(idx)}
-                    className={`px-3 py-1 text-[13px] whitespace-nowrap transition-colors rounded ${
-                      activeTab === idx
-                        ? 'text-[#b80000] font-medium bg-red-50'
-                        : 'text-gray-600 hover:text-[#b80000]'
-                    }`}
-                  >
-                    {sub}
-                  </button>
-                ))}
+              <nav className="flex items-center gap-3 text-[14px]">
+                {subMenus.map((sub) => {
+                  const subSlug = toSlug(sub);
+                  const isActive = activeSub === subSlug;
+                  return (
+                    <Link
+                      key={sub}
+                      href={`/category/${slug}?sub=${subSlug}`}
+                      className={isActive ? 'text-[#c41e3a]' : 'text-[#757575] hover:text-[#c41e3a]'}
+                    >
+                      {sub}
+                    </Link>
+                  );
+                })}
               </nav>
             )}
           </div>
@@ -107,216 +127,136 @@ export default function CategoryPage({ params }: Props) {
         {loading ? (
           <LoadingSkeleton />
         ) : articles.length === 0 ? (
-          <div className="bg-white p-12 text-center text-gray-500">
+          <div className="py-10 text-center text-[#757575]">
             Không có tin tức nào trong chuyên mục này
           </div>
         ) : (
-          <>
-            {/* Top Section: Featured + Secondary */}
-            <section className="bg-white mb-6">
-              <div className="grid grid-cols-1 lg:grid-cols-12 gap-0">
-                {/* Featured Article - 7 cols */}
+          <div className="flex gap-5">
+            {/* Main Content */}
+            <div className="flex-1 min-w-0">
+              {/* Featured Section */}
+              <div className="flex gap-5 pb-5 mb-5 border-b border-[#e5e5e5]">
+                {/* Featured Article */}
                 {featuredArticle && (
-                  <div className="lg:col-span-7 p-4 lg:border-r border-gray-100">
-                    <a href={featuredArticle.url} target="_blank" rel="noopener noreferrer" className="group block">
+                  <div className="flex-1">
+                    <Link href={featuredArticle.url} className="group block">
                       {featuredArticle.thumbnail && (
-                        <div className="relative aspect-[16/10] overflow-hidden bg-gray-100 mb-3">
+                        <div className="relative w-full aspect-[16/10] mb-3">
                           <Image
                             src={featuredArticle.thumbnail}
                             alt={featuredArticle.title}
                             fill
                             priority
-                            className="object-cover group-hover:scale-105 transition-transform duration-300"
+                            className="object-cover"
                           />
                         </div>
                       )}
-                      <h2 className="text-xl font-bold text-gray-900 mb-2 group-hover:text-[#b80000] transition-colors leading-tight">
+                      <h2 className="text-[22px] font-normal text-[#222] leading-[1.4] mb-2 group-hover:text-[#c41e3a]">
                         {featuredArticle.title}
                       </h2>
-                      <p className="text-sm text-gray-600 leading-relaxed line-clamp-3 mb-2">
+                      <p className="text-[14px] text-[#757575] leading-[1.6] line-clamp-3">
                         {featuredArticle.description}
                       </p>
-                      <span className="text-xs text-gray-500">{getTimeAgo(featuredArticle.publishedAt)}</span>
-                    </a>
+                    </Link>
                   </div>
                 )}
 
-                {/* Secondary Articles - 5 cols */}
-                <div className="lg:col-span-5 divide-y divide-gray-100">
-                  {secondaryArticles.map((article) => (
-                    <div key={article.id} className="p-4">
-                      <a href={article.url} target="_blank" rel="noopener noreferrer" className="group flex gap-3">
-                        {article.thumbnail && (
-                          <div className="relative w-[140px] h-[85px] flex-shrink-0 overflow-hidden bg-gray-100">
-                            <Image
-                              src={article.thumbnail}
-                              alt={article.title}
-                              fill
-                              className="object-cover group-hover:scale-105 transition-transform duration-300"
-                            />
-                          </div>
-                        )}
-                        <div className="flex-1 min-w-0">
-                          <h3 className="text-[15px] font-semibold text-gray-900 group-hover:text-[#b80000] transition-colors line-clamp-3 leading-snug">
-                            {article.title}
-                          </h3>
-                          <span className="text-xs text-gray-500 mt-1 block">{getTimeAgo(article.publishedAt)}</span>
-                        </div>
-                      </a>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </section>
-
-            {/* Grid Section - 4 articles */}
-            {gridArticles.length > 0 && (
-              <section className="bg-white p-4 mb-6">
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                  {gridArticles.map((article) => (
-                    <article key={article.id}>
-                      <a href={article.url} target="_blank" rel="noopener noreferrer" className="group block">
-                        {article.thumbnail && (
-                          <div className="relative aspect-[16/10] overflow-hidden bg-gray-100 mb-2">
-                            <Image
-                              src={article.thumbnail}
-                              alt={article.title}
-                              fill
-                              className="object-cover group-hover:scale-105 transition-transform duration-300"
-                            />
-                          </div>
-                        )}
-                        <h3 className="text-[13px] font-semibold text-gray-900 group-hover:text-[#b80000] transition-colors line-clamp-3 leading-snug">
+                {/* Side Articles */}
+                <div className="w-[300px] flex-shrink-0 border-l border-[#e5e5e5] pl-5">
+                  {sideArticles.map((article, idx) => (
+                    <div key={article.id} className={idx < sideArticles.length - 1 ? 'mb-4 pb-4 border-b border-[#e5e5e5]' : ''}>
+                      <Link href={article.url} className="group block">
+                        <h3 className="text-[15px] font-normal text-[#222] leading-[1.4] mb-2 group-hover:text-[#c41e3a] line-clamp-2">
                           {article.title}
                         </h3>
-                      </a>
-                    </article>
+                        <p className="text-[13px] text-[#757575] leading-[1.5] line-clamp-2">
+                          {article.description}
+                        </p>
+                      </Link>
+                    </div>
                   ))}
-                </div>
-              </section>
-            )}
-
-            {/* Main Content + Sidebar */}
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-              {/* Main Content - 8 cols */}
-              <div className="lg:col-span-8">
-                <div className="bg-white">
-                  <div className="px-4 py-3 border-b-2 border-[#b80000]">
-                    <h2 className="text-base font-bold text-gray-900">Tin mới nhất</h2>
-                  </div>
-                  <div className="divide-y divide-gray-100">
-                    {listArticles.map((article) => (
-                      <article key={article.id} className="p-4">
-                        <a href={article.url} target="_blank" rel="noopener noreferrer" className="group flex gap-4">
-                          {article.thumbnail && (
-                            <div className="relative w-[200px] h-[120px] flex-shrink-0 overflow-hidden bg-gray-100">
-                              <Image
-                                src={article.thumbnail}
-                                alt={article.title}
-                                fill
-                                className="object-cover group-hover:scale-105 transition-transform duration-300"
-                              />
-                            </div>
-                          )}
-                          <div className="flex-1 min-w-0">
-                            <h3 className="text-base font-bold text-gray-900 group-hover:text-[#b80000] transition-colors line-clamp-2 leading-snug mb-2">
-                              {article.title}
-                            </h3>
-                            <p className="text-sm text-gray-600 line-clamp-2 leading-relaxed mb-2">
-                              {article.description}
-                            </p>
-                            <span className="text-xs text-gray-500">{getTimeAgo(article.publishedAt)}</span>
-                          </div>
-                        </a>
-                      </article>
-                    ))}
-                  </div>
                 </div>
               </div>
 
-              {/* Sidebar - 4 cols */}
-              <aside className="lg:col-span-4 space-y-6">
-                {/* Xem nhiều */}
-                <div className="bg-white">
-                  <div className="px-4 py-3 border-b-2 border-[#b80000]">
-                    <h2 className="text-base font-bold text-gray-900">Xem nhiều</h2>
-                  </div>
-                  <div className="p-4">
-                    {articles.slice(0, 5).map((article, index) => (
-                      <div key={article.id} className={`flex gap-3 ${index < 4 ? 'pb-3 mb-3 border-b border-gray-100' : ''}`}>
-                        <span className={`text-xl font-bold leading-none pt-0.5 ${index < 3 ? 'text-[#b80000]' : 'text-gray-400'}`}>
-                          {index + 1}
-                        </span>
-                        <a
-                          href={article.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="flex-1 text-[13px] text-gray-900 hover:text-[#b80000] leading-snug line-clamp-3"
-                        >
+              {/* List Articles */}
+              <div className="space-y-5">
+                {listArticles.map((article) => (
+                  <article key={article.id} className="flex gap-4 pb-5 border-b border-[#e5e5e5] last:border-b-0">
+                    {article.thumbnail && (
+                      <Link href={article.url} className="flex-shrink-0">
+                        <div className="relative w-[200px] h-[120px]">
+                          <Image
+                            src={article.thumbnail}
+                            alt={article.title}
+                            fill
+                            className="object-cover"
+                          />
+                        </div>
+                      </Link>
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <Link href={article.url} className="group">
+                        <h3 className="text-[18px] font-normal text-[#222] leading-[1.4] mb-2 group-hover:text-[#c41e3a]">
                           {article.title}
-                        </a>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Chuyên mục khác */}
-                <div className="bg-white">
-                  <div className="px-4 py-3 border-b-2 border-blue-600">
-                    <h2 className="text-base font-bold text-gray-900">Chuyên mục khác</h2>
-                  </div>
-                  <div className="p-4">
-                    <div className="flex flex-wrap gap-2">
-                      {categories
-                        .filter((c) => c.slug !== slug)
-                        .slice(0, 10)
-                        .map((cat) => (
-                          <Link
-                            key={cat.id}
-                            href={`/category/${cat.slug}`}
-                            className="px-3 py-1.5 text-[13px] bg-gray-100 text-gray-700 hover:bg-[#b80000] hover:text-white transition-colors"
-                          >
-                            {cat.name}
-                          </Link>
-                        ))}
+                        </h3>
+                      </Link>
+                      <p className="text-[14px] text-[#757575] leading-[1.6] line-clamp-2 mb-2">
+                        {article.description}
+                      </p>
+                      <span className="text-[12px] text-[#999]">{getTimeAgo(article.publishedAt)}</span>
                     </div>
-                  </div>
-                </div>
-
-                {/* Tin liên quan (sticky) */}
-                <div className="bg-white sticky top-[100px]">
-                  <div className="px-4 py-3 border-b-2 border-green-600">
-                    <h2 className="text-base font-bold text-gray-900">Có thể bạn quan tâm</h2>
-                  </div>
-                  <div className="p-4 space-y-4">
-                    {articles.slice(5, 10).map((article) => (
-                      <a
-                        key={article.id}
-                        href={article.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="group flex gap-3"
-                      >
-                        {article.thumbnail && (
-                          <div className="relative w-[80px] h-[50px] flex-shrink-0 overflow-hidden bg-gray-100">
-                            <Image
-                              src={article.thumbnail}
-                              alt={article.title}
-                              fill
-                              className="object-cover"
-                            />
-                          </div>
-                        )}
-                        <h4 className="flex-1 text-[13px] text-gray-900 group-hover:text-[#b80000] leading-snug line-clamp-3">
-                          {article.title}
-                        </h4>
-                      </a>
-                    ))}
-                  </div>
-                </div>
-              </aside>
+                  </article>
+                ))}
+              </div>
             </div>
-          </>
+
+            {/* Sidebar */}
+            <aside className="w-[300px] flex-shrink-0 border-l border-[#e5e5e5] pl-5">
+              {/* Xem nhiều */}
+              <div className="mb-6">
+                <h2 className="text-[16px] font-bold text-[#222] pb-2 mb-4 border-b border-[#c41e3a]">
+                  Xem nhiều
+                </h2>
+                {articles.slice(0, 5).map((article, index) => (
+                  <div key={article.id} className={index < 4 ? 'mb-4 pb-4 border-b border-[#f0f0f0]' : ''}>
+                    <Link
+                      href={article.url}
+                      className="flex gap-3 group"
+                    >
+                      <span className={`text-[20px] font-bold ${index < 3 ? 'text-[#c41e3a]' : 'text-[#999]'}`}>
+                        {index + 1}
+                      </span>
+                      <span className="text-[14px] text-[#222] leading-[1.4] group-hover:text-[#c41e3a] line-clamp-2">
+                        {article.title}
+                      </span>
+                    </Link>
+                  </div>
+                ))}
+              </div>
+
+              {/* Chuyên mục khác */}
+              <div className="sticky top-[160px]">
+                <h2 className="text-[16px] font-bold text-[#222] pb-2 mb-4 border-b border-[#e5e5e5]">
+                  Chuyên mục
+                </h2>
+                <ul className="space-y-2">
+                  {categories
+                    .filter((c) => c.slug !== slug)
+                    .slice(0, 10)
+                    .map((cat) => (
+                      <li key={cat._id}>
+                        <Link
+                          href={`/category/${cat.slug}`}
+                          className="text-[14px] text-[#222] hover:text-[#c41e3a]"
+                        >
+                          {cat.name}
+                        </Link>
+                      </li>
+                    ))}
+                </ul>
+              </div>
+            </aside>
+          </div>
         )}
       </main>
 
@@ -325,66 +265,67 @@ export default function CategoryPage({ params }: Props) {
   );
 }
 
-/* Loading Skeleton */
+export default function CategoryPage({ params }: Props) {
+  const { slug } = use(params);
+  return (
+    <Suspense fallback={<CategoryLoadingFallback />}>
+      <CategoryContent slug={slug} />
+    </Suspense>
+  );
+}
+
+function CategoryLoadingFallback() {
+  return (
+    <div className="min-h-screen bg-white">
+      <Header />
+      <main className="mx-auto px-4 py-5 max-w-[1130px]">
+        <div className="h-8 w-40 bg-gray-100 mb-5"></div>
+        <LoadingSkeleton />
+      </main>
+      <Footer />
+    </div>
+  );
+}
+
 function LoadingSkeleton() {
   return (
-    <div className="space-y-6">
-      {/* Top section skeleton */}
-      <div className="bg-white p-4">
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-          <div className="lg:col-span-7">
-            <div className="aspect-[16/10] bg-gray-200 animate-pulse mb-3"></div>
-            <div className="h-6 bg-gray-200 animate-pulse mb-2 w-3/4"></div>
-            <div className="h-4 bg-gray-200 animate-pulse w-full"></div>
+    <div className="flex gap-5">
+      <div className="flex-1">
+        <div className="flex gap-5 pb-5 mb-5 border-b border-[#e5e5e5]">
+          <div className="flex-1">
+            <div className="aspect-[16/10] bg-gray-100 mb-3"></div>
+            <div className="h-6 bg-gray-100 mb-2 w-3/4"></div>
+            <div className="h-4 bg-gray-100 w-full"></div>
           </div>
-          <div className="lg:col-span-5 space-y-4">
+          <div className="w-[300px] border-l border-[#e5e5e5] pl-5 space-y-4">
             {[1, 2, 3].map((i) => (
-              <div key={i} className="flex gap-3">
-                <div className="w-[140px] h-[85px] bg-gray-200 animate-pulse"></div>
-                <div className="flex-1">
-                  <div className="h-4 bg-gray-200 animate-pulse mb-2"></div>
-                  <div className="h-4 bg-gray-200 animate-pulse w-2/3"></div>
-                </div>
+              <div key={i} className="pb-4 border-b border-[#e5e5e5]">
+                <div className="h-4 bg-gray-100 mb-2"></div>
+                <div className="h-3 bg-gray-100 w-2/3"></div>
               </div>
             ))}
           </div>
         </div>
-      </div>
-
-      {/* Grid skeleton */}
-      <div className="bg-white p-4">
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="space-y-5">
           {[1, 2, 3, 4].map((i) => (
-            <div key={i}>
-              <div className="aspect-[16/10] bg-gray-200 animate-pulse mb-2"></div>
-              <div className="h-4 bg-gray-200 animate-pulse"></div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* List skeleton */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        <div className="lg:col-span-8 bg-white p-4 space-y-4">
-          {[1, 2, 3, 4].map((i) => (
-            <div key={i} className="flex gap-4 pb-4 border-b border-gray-100">
-              <div className="w-[200px] h-[120px] bg-gray-200 animate-pulse"></div>
+            <div key={i} className="flex gap-4 pb-5 border-b border-[#e5e5e5]">
+              <div className="w-[200px] h-[120px] bg-gray-100"></div>
               <div className="flex-1">
-                <div className="h-5 bg-gray-200 animate-pulse mb-2 w-3/4"></div>
-                <div className="h-4 bg-gray-200 animate-pulse w-full"></div>
+                <div className="h-5 bg-gray-100 mb-2 w-3/4"></div>
+                <div className="h-4 bg-gray-100 w-full"></div>
               </div>
             </div>
           ))}
         </div>
-        <div className="lg:col-span-4 bg-white p-4">
-          <div className="h-6 bg-gray-200 animate-pulse mb-4 w-1/3"></div>
-          {[1, 2, 3, 4, 5].map((i) => (
-            <div key={i} className="flex gap-3 mb-3">
-              <div className="w-6 h-6 bg-gray-200 animate-pulse"></div>
-              <div className="flex-1 h-4 bg-gray-200 animate-pulse"></div>
-            </div>
-          ))}
-        </div>
+      </div>
+      <div className="w-[300px] border-l border-[#e5e5e5] pl-5">
+        <div className="h-5 bg-gray-100 w-24 mb-4"></div>
+        {[1, 2, 3, 4, 5].map((i) => (
+          <div key={i} className="flex gap-3 mb-4 pb-4 border-b border-[#f0f0f0]">
+            <div className="w-6 h-6 bg-gray-100"></div>
+            <div className="flex-1 h-4 bg-gray-100"></div>
+          </div>
+        ))}
       </div>
     </div>
   );

@@ -1,6 +1,7 @@
 'use client';
 
 import Image from 'next/image';
+import Link from 'next/link';
 import { Article } from '@/types/news';
 
 interface Props {
@@ -9,10 +10,12 @@ interface Props {
 }
 
 export default function ArticleCard({ article, variant = 'horizontal' }: Props) {
+  const articleUrl = `/article?url=${encodeURIComponent(article.url)}`;
+
   if (variant === 'vertical') {
     return (
       <article className="group">
-        <a href={article.url} target="_blank" rel="noopener noreferrer" className="block">
+        <Link href={articleUrl} className="block">
           <div className="relative aspect-[16/10] mb-2 overflow-hidden rounded">
             {article.thumbnail ? (
               <Image
@@ -31,14 +34,14 @@ export default function ArticleCard({ article, variant = 'horizontal' }: Props) 
           <h3 className="text-sm font-semibold text-gray-900 group-hover:text-[#B80000] transition-colors line-clamp-2">
             {article.title}
           </h3>
-        </a>
+        </Link>
       </article>
     );
   }
 
   return (
     <article className="group flex gap-4 py-4 border-b border-gray-100 last:border-b-0">
-      <a href={article.url} target="_blank" rel="noopener noreferrer" className="flex gap-4 w-full">
+      <Link href={articleUrl} className="flex gap-4 w-full">
         <div className="flex-1 min-w-0">
           <span className="text-xs text-[#B80000] font-medium mb-1 block">
             {article.category}
@@ -65,7 +68,7 @@ export default function ArticleCard({ article, variant = 'horizontal' }: Props) 
             </div>
           )}
         </div>
-      </a>
+      </Link>
     </article>
   );
 }
